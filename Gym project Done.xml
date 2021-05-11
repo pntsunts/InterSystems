@@ -1,0 +1,354 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="IRIS" version="26" zv="IRIS for Windows (x86-64) 2020.1 (Build 215U)" ts="2021-05-11 09:33:17">
+<Class name="User.RestServices">
+<Super>%CSP.REST</Super>
+<TimeChanged>65875,32920.450818</TimeChanged>
+<TimeCreated>65863,32033.906874</TimeCreated>
+
+<XData name="UrlMap">
+<XMLNamespace>http://www.intersystems.com/urlmap</XMLNamespace>
+<Data><![CDATA[
+<Routes>
+<Route Url="/createMember" Method="POST" Call="createMember"/>
+<Route Url="/getMember/:emailAdress" Method="GET" Call="getMember"/>
+<Route Url="/createBooking" Method="POST" Call="createBooking"/>
+<Route Url="/getBookings/:clientId" Method="GET" Call="getBookings"/>
+<!--
+<Route Url="/class/:namespace/:classname" Method="GET" Call="GetClass" Cors="true"/>
+<Map Prefix="/docserver" Forward="%Api.v1.DocServer"/>
+-->
+</Routes>
+]]></Data>
+</XData>
+
+<Method name="createMember">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	//My function returns a status so I decided to set status to a status value of OHK
+	set status = $$$OK
+	
+	//I am calling a class method that will store data coming from the server inside Content from Json
+	
+	set obj = ##class(%DynamicObject).%FromJSON(%request.Content)
+	
+	//Creating a new instant of validation class
+	
+	set validate = ##class(User.Validation).%New()
+	
+	
+	try {
+		//checking all required fields
+		
+		if (validate.Valid(obj.emailAdress, obj.firstName, obj.gender, obj.lastName, obj.race) = 1)
+		{
+			//checking if the emails already exist or not
+			//writing a query statement to select or read
+			set sql = "SELECT * FROM SQLUser.tblMember WHERE emailAdress = ? "
+			//creating a new instants of Sql.statement class
+			set statement = ##class(%SQL.Statement).%New()
+			
+			//Using a method inside sql.statement called prepare to check the sql statement query
+			set tsc = statement.%Prepare(sql)
+			//Running the Query
+			set result = statement.%Execute(obj.emailAdress)
+			
+			//checking if the email already exist
+			while (result.%Next() '= 0){
+				write "Email already exists!!"
+				//if email exists return status
+				return status
+			}
+			//Inserting to the database called tblMember
+			set sql = "INSERT INTO SQLUser.tblMember(emailAdress, firstName, gender, lastName, race) VALUES (?,?,?,?,?)"
+			set statement = ##class(%SQL.Statement).%New()
+			set status = statement.%Prepare(sql)
+			set result = statement.%Execute(obj.emailAdress, obj.firstName, obj.gender, obj.lastName, obj.race)
+			write "registered successfully"
+			return result
+		}
+		write "Enter all fields"
+	}
+	catch ex {
+		set tsc = ex.AsStatus()		
+	}
+	return status
+]]></Implementation>
+</Method>
+
+<Method name="getMember">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>emailAdress</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	//My function returns a status so I decided to set status to a status value of OHK
+	set tsc = $$$OK
+	
+	try{
+		//if email adress is entered
+		if ($LENGTH(emailAdress) > 0){
+			
+			//sql query to select or read from the database
+	    	set sql = "SELECT * FROM SQLUser.tblMember WHERE emailAdress = ?"
+			set statement = ##class(%SQL.Statement).%New()
+			set tsc = statement.%Prepare(sql)
+			set result = statement.%Execute(emailAdress)
+			
+			//if emailAdress is not found
+			 
+			if ('result.%Next()){
+				write "email does not ex"
+				return result
+			}
+			
+			//Creating a dynamic object
+			set obj = {
+				"firstName":(result.firstName),
+				"lastName":(result.lastName),
+				"race":(result.race),
+				"gender":(result.gender)
+			}
+			//Writing it in a Json format
+			Write obj.%ToJSON()
+			return result
+			}
+		}
+	
+	catch ex {
+		set tsc = ex.AsStatus()		
+	}
+	return tsc
+]]></Implementation>
+</Method>
+
+<Method name="createBooking">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set tsc = $$$OK
+	
+	//I am calling a class method that will store data coming from the server inside Content from Json
+	
+	set obj = ##class(%DynamicObject).%FromJSON(%request.Content)
+	
+	try{
+		
+		//Check if the email is entered
+		
+		if ($LENGTH(obj.emailAdress) > 0){
+			
+			//sql query to select or read from the database
+			
+			set sql = "SELECT * FROM SQLUser.tblMember WHERE emailAdress = ?"
+			
+			//creating a new instant
+			set statement = ##class(%SQL.Statement).%New()
+			set tsc = statement.%Prepare(sql)
+			set result = statement.%Execute(obj.emailAdress)
+			
+			if (result.%Next() = 0){
+				write "Enter Valid emailAdress or Register first"
+				return result
+			}
+			
+			if ($LENGTH(obj.dateOfBooking) > 0)
+			{
+			
+				set clientId = result.ID
+				set sql = "INSERT INTO SQLUser.tblBooking(clientId, dateOfBooking) VALUES (?,?)"
+				set statement = ##class(%SQL.Statement).%New()
+				set status = statement.%Prepare(sql)
+				set res = statement.%Execute(clientId, obj.dateOfBooking)
+				write "Booked successfully"
+				return res
+			}
+		}
+	}	
+	catch ex {
+		set tsc = ex.AsStatus()		
+	}
+	return tsc
+]]></Implementation>
+</Method>
+
+<Method name="getBookings">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>clientId:%Integer</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set tsc = $$$OK
+	
+	try{
+		if ($LENGTH(clientId) > 0)
+		{	
+			set sql = "SELECT * FROM SQLUser.tblBooking WHERE clientId = ?"
+			set statement = ##class(%SQL.Statement).%New()
+			set tsc = statement.%Prepare(sql)
+			set result = statement.%Execute(clientId)
+			
+			set obj = {"Bookings": []}
+			
+			while (result.%Next() '= 0){
+				set booking = {
+					"clientId":(result.clientId),
+					"dateOfBooking":(result.dateOfBooking)
+				}
+				Do obj.Bookings.%Push(booking)
+			}
+			Write obj.%ToJSON()
+			return result
+		}
+	}
+	catch ex {
+		set tsc = ex.AsStatus()		
+	}
+	return tsc
+]]></Implementation>
+</Method>
+</Class>
+
+
+<Class name="User.Validation">
+<Super>%Persistent</Super>
+<TimeChanged>65863,37682.957577</TimeChanged>
+<TimeCreated>65863,37681.993879</TimeCreated>
+
+<Method name="Valid">
+<FormalSpec>firstName,lastName,gender,race,emailAdress</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	if ($LENGTH(firstName) = 0) {return 0} 
+	if ($LENGTH(lastName) = 0){return 0}
+	if ($LENGTH(gender) = 0){return 0}
+	if ($LENGTH(race) = 0){return 0}
+	if ($LENGTH(emailAdress) = 0) {return 0}
+	return 1
+]]></Implementation>
+</Method>
+
+<Storage name="Default">
+<Type>%Storage.Persistent</Type>
+<DataLocation>^User.ValidationD</DataLocation>
+<DefaultData>ValidationDefaultData</DefaultData>
+<IdLocation>^User.ValidationD</IdLocation>
+<IndexLocation>^User.ValidationI</IndexLocation>
+<StreamLocation>^User.ValidationS</StreamLocation>
+<Data name="ValidationDefaultData">
+<Structure>listnode</Structure>
+<Subscript/>
+<Value name="1">
+<Value>%%CLASSNAME</Value>
+</Value>
+</Data>
+</Storage>
+</Class>
+
+
+<Class name="User.tblBooking">
+<SqlTableName>tblBooking</SqlTableName>
+<Super>%Persistent,%Populate</Super>
+<TimeChanged>65864,49323.240399</TimeChanged>
+<TimeCreated>65862,38370.671219</TimeCreated>
+
+<Property name="dateOfBooking">
+<Type>%String</Type>
+<Required>1</Required>
+</Property>
+
+<Property name="clientId">
+<Type>%Integer</Type>
+<Required>1</Required>
+</Property>
+
+<ForeignKey name="clientId">
+<Properties>clientId</Properties>
+<ReferencedClass>User.tblMember</ReferencedClass>
+</ForeignKey>
+
+<Storage name="Default">
+<Type>%Storage.Persistent</Type>
+<DataLocation>^User.tblBookingD</DataLocation>
+<DefaultData>tblBookingDefaultData</DefaultData>
+<IdLocation>^User.tblBookingD</IdLocation>
+<IndexLocation>^User.tblBookingI</IndexLocation>
+<StreamLocation>^User.tblBookingS</StreamLocation>
+<Data name="tblBookingDefaultData">
+<Value name="1">
+<Value>%%CLASSNAME</Value>
+</Value>
+<Value name="2">
+<Value>dateOfBooking</Value>
+</Value>
+<Value name="3">
+<Value>clientId</Value>
+</Value>
+</Data>
+</Storage>
+</Class>
+
+
+<Class name="User.tblMember">
+<SqlTableName>tblMember</SqlTableName>
+<Super>%Persistent,%Populate</Super>
+<TimeChanged>65864,48816.867049</TimeChanged>
+<TimeCreated>65862,38031.699807</TimeCreated>
+
+<Property name="firstName">
+<Type>%String</Type>
+<Required>1</Required>
+</Property>
+
+<Property name="lastName">
+<Type>%String</Type>
+<Required>1</Required>
+</Property>
+
+<Property name="emailAdress">
+<Type>%String</Type>
+<Required>1</Required>
+</Property>
+
+<Index name="emailAdressIndex">
+<Properties>emailAdress</Properties>
+<Unique>1</Unique>
+</Index>
+
+<Property name="gender">
+<Type>%String</Type>
+<Required>1</Required>
+</Property>
+
+<Property name="race">
+<Type>%String</Type>
+</Property>
+
+<Storage name="Default">
+<Type>%Storage.Persistent</Type>
+<DataLocation>^User.tblMemberD</DataLocation>
+<DefaultData>tblMemberDefaultData</DefaultData>
+<IdLocation>^User.tblMemberD</IdLocation>
+<IndexLocation>^User.tblMemberI</IndexLocation>
+<StreamLocation>^User.tblMemberS</StreamLocation>
+<Data name="tblMemberDefaultData">
+<Value name="1">
+<Value>%%CLASSNAME</Value>
+</Value>
+<Value name="2">
+<Value>firstName</Value>
+</Value>
+<Value name="3">
+<Value>lastName</Value>
+</Value>
+<Value name="4">
+<Value>emailAdress</Value>
+</Value>
+<Value name="5">
+<Value>gender</Value>
+</Value>
+<Value name="6">
+<Value>race</Value>
+</Value>
+</Data>
+</Storage>
+</Class>
+</Export>
